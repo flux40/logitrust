@@ -11,8 +11,6 @@ import {
   Mail,
   CheckCircle,
   Loader2,
-  User,
-  Phone,
   Users,
   Minimize2,
   Maximize2
@@ -37,7 +35,7 @@ interface Conversation {
   unread_count: number
 }
 
-export default function CustomerChat() {
+export default function CustomerSupport() {
   const [isOpen, setIsOpen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -47,10 +45,34 @@ export default function CustomerChat() {
   const [customerInfo, setCustomerInfo] = useState({ name: '', email: '' })
   const [showInfoModal, setShowInfoModal] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [user, setUser] = useState<any>(null)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
+
+  // Check if user is logged in
+  useEffect(() => {
+    checkUser()
+  }, [])
+
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      setUser(user)
+      // Get user profile
+      const { data: userData } = await supabase
+        .from('users')
+        .select('full_name')
+        .eq('email', user.email)
+        .single()
+      
+      setCustomerInfo({
+        name: userData?.full_name || user.email?.split('@')[0] || 'Customer',
+        email: user.email || ''
+      })
+    }
+  }
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -84,6 +106,7 @@ export default function CustomerChat() {
             if (newMessage.sender_role === 'admin') {
               setMessages(prev => [...prev, newMessage])
               markMessagesAsRead()
+              toast.info('New message from support!', { duration: 3000 })
             }
           }
         )
@@ -222,8 +245,10 @@ export default function CustomerChat() {
   }
 
   const handleOpenChat = () => {
-    if (!conversation) {
+    if (!conversation && !user) {
       setShowInfoModal(true)
+    } else if (!conversation && user) {
+      startConversation()
     }
     setIsOpen(true)
     setIsMinimized(false)
@@ -238,9 +263,9 @@ export default function CustomerChat() {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={handleOpenChat}
-        className="fixed bottom-6 right-6 z-50 bg-gold text-navy p-4 rounded-full shadow-2xl hover:shadow-xl transition-all group"
+        className="fixed bottom-20 right-4 z-50 bg-gold text-navy p-3 rounded-full shadow-2xl hover:shadow-xl transition-all group md:bottom-6 md:right-6"
       >
-        <MessageCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
+        <MessageCircle className="w-5 h-5 md:w-6 md:h-6 group-hover:scale-110 transition-transform" />
         {conversation?.unread_count ? (
           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
             {conversation.unread_count}
@@ -255,14 +280,14 @@ export default function CustomerChat() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
             onClick={() => setShowInfoModal(false)}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+              className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center mb-6">
@@ -333,8 +358,8 @@ export default function CustomerChat() {
             transition={{ duration: 0.3 }}
             className={`fixed z-50 bg-white rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ${
               isMinimized 
-                ? 'bottom-24 right-6 w-80 h-14' 
-                : 'bottom-24 right-6 w-[90vw] max-w-md h-[600px]'
+                ? 'bottom-24 right-4 w-72 h-14 md:bottom-6 md:right-6' 
+                : 'bottom-24 right-4 w-[calc(100vw-2rem)] max-w-md h-[500px] md:bottom-6 md:right-6'
             }`}
           >
             {/* Header */}
@@ -342,10 +367,10 @@ export default function CustomerChat() {
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <div className="bg-gold/20 p-2 rounded-full">
-                    <Headphones className="w-5 h-5 text-gold" />
+                    <Headphones className="w-4 h-4 text-gold" />
                   </div>
                   <div>
-                    <h3 className="font-bold">Live Support</h3>
+                    <h3 className="font-bold text-sm">Live Support</h3>
                     <p className="text-xs text-white/70 flex items-center gap-1">
                       <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                       Agents Online • 24/7
@@ -372,7 +397,7 @@ export default function CustomerChat() {
             {!isMinimized && (
               <>
                 {/* Quick Info Bar */}
-                <div className="bg-gray-50 p-3 flex justify-around text-xs border-b">
+                <div className="bg-gray-50 p-2 flex justify-around text-xs border-b">
                   <div className="flex items-center gap-1">
                     <Clock className="w-3 h-3 text-gold" />
                     <span className="text-gray-600">Quick Response</span>
@@ -388,12 +413,12 @@ export default function CustomerChat() {
                 </div>
 
                 {/* Messages */}
-                <div className="h-[400px] overflow-y-auto p-4 bg-gray-50">
+                <div className="h-[340px] overflow-y-auto p-4 bg-gray-50">
                   {messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center">
                       <Headphones className="w-12 h-12 text-gold/50 mb-4" />
-                      <p className="text-gray-500">Start a conversation with our support team</p>
-                      <p className="text-sm text-gray-400 mt-2">We typically respond within minutes</p>
+                      <p className="text-gray-500 text-sm">Start a conversation with our support team</p>
+                      <p className="text-xs text-gray-400 mt-2">We typically respond within minutes</p>
                     </div>
                   ) : (
                     messages.map((message) => (
@@ -406,20 +431,20 @@ export default function CustomerChat() {
                         <div className={`max-w-[80%] ${message.sender_role === 'customer' ? 'order-2' : 'order-1'}`}>
                           {message.sender_role === 'admin' && (
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="w-6 h-6 bg-gold/20 rounded-full flex items-center justify-center">
-                                <Headphones className="w-3 h-3 text-gold" />
+                              <div className="w-5 h-5 bg-gold/20 rounded-full flex items-center justify-center">
+                                <Headphones className="w-2.5 h-2.5 text-gold" />
                               </div>
                               <span className="text-xs text-gray-500">Support Agent</span>
                             </div>
                           )}
                           <div
-                            className={`p-3 rounded-2xl ${
+                            className={`p-3 rounded-2xl text-sm ${
                               message.sender_role === 'customer'
                                 ? 'bg-gold text-navy rounded-br-none'
                                 : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
                             }`}
                           >
-                            <p className="text-sm">{message.message}</p>
+                            <p>{message.message}</p>
                           </div>
                           <div className="flex items-center gap-1 mt-1">
                             <span className="text-xs text-gray-400">
@@ -434,7 +459,7 @@ export default function CustomerChat() {
                 </div>
 
                 {/* Input */}
-                <form onSubmit={handleSendMessage} className="p-4 border-t bg-white">
+                <form onSubmit={handleSendMessage} className="p-3 border-t bg-white">
                   <div className="flex gap-2">
                     <input
                       ref={inputRef}
@@ -442,14 +467,14 @@ export default function CustomerChat() {
                       value={inputMessage}
                       onChange={(e) => setInputMessage(e.target.value)}
                       placeholder="Type your message..."
-                      className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:border-gold focus:outline-none transition-colors"
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gold focus:outline-none transition-colors"
                     />
                     <button
                       type="submit"
                       disabled={!inputMessage.trim() || isSending}
                       className="bg-gold text-navy p-2 rounded-lg hover:bg-gold/90 transition-all disabled:opacity-50"
                     >
-                      {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                      {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>
                   </div>
                 </form>

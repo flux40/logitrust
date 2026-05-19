@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Package, MapPin, Scale, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 export default function Hero() {
   const [formData, setFormData] = useState({
@@ -12,7 +13,9 @@ export default function Hero() {
     weight: "",
   });
   const [trackingId, setTrackingId] = useState("");
+  const [isTracking, setIsTracking] = useState(false);
   const router = useRouter();
+  const supabase = createClient();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,11 +23,24 @@ export default function Hero() {
     // Add your booking logic here
   };
 
-  const handleTrack = (e: React.FormEvent) => {
+  const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (trackingId.trim()) {
+    if (!trackingId.trim()) return;
+    
+    setIsTracking(true);
+    
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      // User is logged in, go directly to tracking
       router.push(`/track/${trackingId}`);
+    } else {
+      // User not logged in, redirect to login with return URL
+      router.push(`/login?redirect=/track/${trackingId}`);
     }
+    
+    setIsTracking(false);
   };
 
   return (
@@ -84,11 +100,17 @@ export default function Hero() {
               />
               <button
                 type="submit"
-                className="bg-gold text-navy px-6 py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-105"
+                disabled={isTracking}
+                className="bg-gold text-navy px-6 py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-105 disabled:opacity-50"
               >
-                Track
+                {isTracking ? "Checking..." : "Track"}
               </button>
             </motion.form>
+            
+            <p className="text-white/50 text-xs mt-3 flex items-center gap-1">
+              <span className="inline-block w-1 h-1 bg-gold rounded-full"></span>
+              Login required for tracking
+            </p>
           </motion.div>
 
           {/* Booking Form */}

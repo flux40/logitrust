@@ -18,11 +18,11 @@ export default function Home() {
       <Hero />
       
       {/* Tracking Section */}
-      <section className="py-20 bg-gray-50">
+      {/* <section className="py-20 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4">
           <TrackingInput />
         </div>
-      </section>
+      </section> */}
       
       <Partners />
       <Services />

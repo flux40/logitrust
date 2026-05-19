@@ -1,42 +1,44 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, LogIn, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard/customer'
   const supabase = createClient()
 
-  // Check if user is already logged in
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        // Get user role and redirect
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('email', user.email)
-          .single()
-        
-        if (userData?.role === 'admin') {
-          router.push('/dashboard/admin')
-        } else {
-          router.push('/dashboard/customer')
-        }
+    checkUser()
+  }, [])
+
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      // Get user role and redirect
+      const { data: userData } = await supabase
+        .from('users')
+        .select('role')
+        .eq('email', user.email)
+        .single()
+      
+      if (userData?.role === 'admin') {
+        router.push('/dashboard/admin')
+      } else {
+        router.push('/dashboard/customer')
       }
     }
-    checkUser()
-  }, [router, supabase])
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,17 +69,19 @@ export default function LoginPage() {
         return
       }
 
-      // Get user role from users table
+      // IMPORTANT: Get user role from database
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('role')
+        .select('role, full_name')
         .eq('email', email)
         .single()
 
+      console.log('User data from DB:', userData) // Debug log
+
       if (userError) {
         console.error('Error fetching user role:', userError)
-        // Create user record if it doesn't exist
-        const { error: insertError } = await supabase
+        // If no record, create one as customer
+        await supabase
           .from('users')
           .insert({
             id: authData.user.id,
@@ -85,59 +89,57 @@ export default function LoginPage() {
             full_name: email.split('@')[0],
             role: 'customer'
           })
-        
-        if (insertError) {
-          console.error('Error creating user:', insertError)
-        }
-        
         toast.success('Login successful!')
         router.push('/dashboard/customer')
         setLoading(false)
         return
       }
 
-      toast.success(`Welcome back!`)
+      toast.success(`Welcome ${userData.full_name || email.split('@')[0]}!`)
 
-      // IMPORTANT: Use window.location for hard redirect
+      // Redirect based on role
       if (userData?.role === 'admin') {
-        window.location.href = '/dashboard/admin'
+        console.log('Redirecting to admin dashboard')
+        router.push('/dashboard/admin')
       } else {
-        window.location.href = '/dashboard/customer'
+        console.log('Redirecting to customer dashboard')
+        router.push('/dashboard/customer')
       }
       
     } catch (error) {
       console.error('Login error:', error)
       toast.error('An error occurred. Please try again.')
+    } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 flex items-center justify-center py-20 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 flex items-center justify-center py-12 px-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl"
+        className="w-full max-w-md bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl"
       >
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gold/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <LogIn className="w-8 h-8 text-gold" />
+          <div className="flex justify-center mb-4">
+            <Package className="w-12 h-12 text-gold" />
           </div>
-          <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
-          <p className="text-white/70 mt-2">Sign in to your account</p>
+          <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
+          <p className="text-white/70 text-sm mt-1">Sign in to your account</p>
         </div>
         
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="text-white text-sm font-medium block mb-2">Email Address</label>
+            <label className="text-white text-sm font-medium block mb-2">Email</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-4 h-4" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
+                className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold text-sm"
                 placeholder="admin@logitrust.com"
                 disabled={loading}
               />
@@ -147,13 +149,13 @@ export default function LoginPage() {
           <div>
             <label className="text-white text-sm font-medium block mb-2">Password</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-4 h-4" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-10 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
+                className="w-full pl-10 pr-10 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold text-sm"
                 placeholder="••••••••"
                 disabled={loading}
               />
@@ -163,19 +165,19 @@ export default function LoginPage() {
                 className="absolute right-3 top-1/2 transform -translate-y-1/2"
               >
                 {showPassword ? 
-                  <EyeOff className="w-5 h-5 text-white/50 hover:text-gold" /> : 
-                  <Eye className="w-5 h-5 text-white/50 hover:text-gold" />
+                  <EyeOff className="w-4 h-4 text-white/50" /> : 
+                  <Eye className="w-4 h-4 text-white/50" />
                 }
               </button>
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between text-sm">
             <label className="flex items-center gap-2">
-              <input type="checkbox" className="rounded border-white/20 bg-white/10 text-gold focus:ring-gold" />
-              <span className="text-white/70 text-sm">Remember me</span>
+              <input type="checkbox" className="rounded border-white/20 bg-white/10 text-gold" />
+              <span className="text-white/70">Remember me</span>
             </label>
-            <Link href="/forgot-password" className="text-gold text-sm hover:text-gold/80">
+            <Link href="/forgot-password" className="text-gold hover:text-gold/80">
               Forgot password?
             </Link>
           </div>
@@ -183,17 +185,14 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-[1.02] disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-6"
           >
             {loading ? (
-              <>
-                <div className="w-5 h-5 border-2 border-navy/30 border-t-navy rounded-full animate-spin" />
-                Signing in...
-              </>
+              <div className="w-5 h-5 border-2 border-navy/30 border-t-navy rounded-full animate-spin" />
             ) : (
               <>
                 Sign In
-                <LogIn className="w-5 h-5" />
+                <LogIn className="w-4 h-4" />
               </>
             )}
           </button>
@@ -201,11 +200,19 @@ export default function LoginPage() {
 
         <p className="text-center text-white/70 text-sm mt-6">
           Don't have an account?{' '}
-          <Link href="/register" className="text-gold hover:text-gold/80 font-semibold">
-            Create account
+          <Link href="/register" className="text-gold font-semibold">
+            Sign up
           </Link>
         </p>
       </motion.div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-navy" />}>
+      <LoginForm />
+    </Suspense>
   )
 }
