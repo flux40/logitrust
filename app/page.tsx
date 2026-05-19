@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import Navbar from '@/components/Navbar'
 import Hero from '@/components/Hero'
 import Partners from '@/components/Partners'
@@ -10,6 +9,7 @@ import Features from '@/components/Features'
 import CTA from '@/components/CTA'
 import Footer from '@/components/Footer'
 import TrackingInput from '@/components/tracking/TrackingInput'
+import FAQ from '@/components/FAQ'
 
 export default function Home() {
   return (
@@ -17,9 +17,9 @@ export default function Home() {
       <Navbar />
       <Hero />
       
-      {/* Add Tracking Section */}
+      {/* Tracking Section */}
       <section className="py-20 bg-gray-50">
-        <div className="max-w-3xl mx-auto px-4">
+        <div className="max-w-4xl mx-auto px-4">
           <TrackingInput />
         </div>
       </section>
@@ -28,6 +28,11 @@ export default function Home() {
       <Services />
       <About />
       <Features />
+      
+      {/* FAQ Section */}
+      <FAQ />
+      
+      
       <CTA />
       <Footer />
     </main>

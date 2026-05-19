@@ -88,13 +88,13 @@ export default function Footer() {
             <p className="text-gray-400 text-sm mb-4">
               Subscribe to get special offers and logistics insights.
             </p>
-            <div className="flex gap-2">
+            <div className="">
               <input
                 type="email"
                 placeholder="Your email"
                 className="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-gold"
               />
-              <button className="bg-gold text-navy px-4 py-2 rounded-lg font-semibold hover:bg-gold/90 transition-all">
+              <button className="bg-gold text-navy px-4 mt-3 py-2 rounded-lg font-semibold hover:bg-gold/90 transition-all">
                 Subscribe
               </button>
             </div>

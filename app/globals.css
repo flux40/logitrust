@@ -1,19 +1,17 @@
+/* Add this at the top of globals.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --color-navy: #07152B;
-    --color-gold: #F4B400;
-  }
-  
   html {
     scroll-behavior: smooth;
   }
-  
   body {
     @apply bg-white text-navy;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 
@@ -23,7 +21,6 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
   }
-  
   .text-shadow {
     text-shadow: 0 2px 4px rgba(0,0,0,0.1);
   }

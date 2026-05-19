@@ -1,58 +1,53 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react'
+import { User, Mail, Lock, Eye, EyeOff, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 
-export default function LoginPage() {
+export default function RegisterPage() {
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
-  // Check if user is already logged in
-  useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        // Get user role and redirect
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('email', user.email)
-          .single()
-        
-        if (userData?.role === 'admin') {
-          router.push('/dashboard/admin')
-        } else {
-          router.push('/dashboard/customer')
-        }
-      }
-    }
-    checkUser()
-  }, [router, supabase])
-
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!email || !password) {
+    if (!fullName || !email || !password) {
       toast.error('Please fill in all fields')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match')
+      return
+    }
+
+    if (password.length < 6) {
+      toast.error('Password must be at least 6 characters')
       return
     }
 
     setLoading(true)
 
     try {
-      // Sign in with Supabase
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      // Sign up with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+        },
       })
 
       if (authError) {
@@ -61,53 +56,28 @@ export default function LoginPage() {
         return
       }
 
-      if (!authData.user) {
-        toast.error('Login failed')
-        setLoading(false)
-        return
-      }
-
-      // Get user role from users table
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('email', email)
-        .single()
-
-      if (userError) {
-        console.error('Error fetching user role:', userError)
-        // Create user record if it doesn't exist
-        const { error: insertError } = await supabase
+      if (authData.user) {
+        // Create user record in your users table
+        const { error: userError } = await supabase
           .from('users')
           .insert({
             id: authData.user.id,
+            full_name: fullName,
             email: email,
-            full_name: email.split('@')[0],
-            role: 'customer'
+            role: 'customer',
           })
-        
-        if (insertError) {
-          console.error('Error creating user:', insertError)
+
+        if (userError) {
+          console.error('Error creating user record:', userError)
         }
-        
-        toast.success('Login successful!')
-        router.push('/dashboard/customer')
-        setLoading(false)
-        return
-      }
 
-      toast.success(`Welcome back!`)
-
-      // IMPORTANT: Use window.location for hard redirect
-      if (userData?.role === 'admin') {
-        window.location.href = '/dashboard/admin'
-      } else {
-        window.location.href = '/dashboard/customer'
+        toast.success('Account created successfully! Please check your email to verify your account.')
+        router.push('/login')
       }
-      
     } catch (error) {
-      console.error('Login error:', error)
+      console.error('Registration error:', error)
       toast.error('An error occurred. Please try again.')
+    } finally {
       setLoading(false)
     }
   }
@@ -121,13 +91,29 @@ export default function LoginPage() {
       >
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-gold/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <LogIn className="w-8 h-8 text-gold" />
+            <UserPlus className="w-8 h-8 text-gold" />
           </div>
-          <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
-          <p className="text-white/70 mt-2">Sign in to your account</p>
+          <h2 className="text-3xl font-bold text-white">Create Account</h2>
+          <p className="text-white/70 mt-2">Join LogiTrust today</p>
         </div>
         
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleRegister} className="space-y-4">
+          <div>
+            <label className="text-white text-sm font-medium block mb-2">Full Name</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+              <input
+                type="text"
+                required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
+                placeholder="John Doe"
+                disabled={loading}
+              />
+            </div>
+          </div>
+
           <div>
             <label className="text-white text-sm font-medium block mb-2">Email Address</label>
             <div className="relative">
@@ -138,7 +124,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
-                placeholder="admin@logitrust.com"
+                placeholder="you@example.com"
                 disabled={loading}
               />
             </div>
@@ -157,6 +143,22 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 disabled={loading}
               />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-white text-sm font-medium block mb-2">Confirm Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full pl-10 pr-10 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
+                placeholder="••••••••"
+                disabled={loading}
+              />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
@@ -170,40 +172,34 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" className="rounded border-white/20 bg-white/10 text-gold focus:ring-gold" />
-              <span className="text-white/70 text-sm">Remember me</span>
-            </label>
-            <Link href="/forgot-password" className="text-gold text-sm hover:text-gold/80">
-              Forgot password?
-            </Link>
-          </div>
-
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-[1.02] disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2 mt-6"
           >
             {loading ? (
               <>
                 <div className="w-5 h-5 border-2 border-navy/30 border-t-navy rounded-full animate-spin" />
-                Signing in...
+                Creating account...
               </>
             ) : (
               <>
-                Sign In
-                <LogIn className="w-5 h-5" />
+                Create Account
+                <UserPlus className="w-5 h-5" />
               </>
             )}
           </button>
         </form>
 
         <p className="text-center text-white/70 text-sm mt-6">
-          Don't have an account?{' '}
-          <Link href="/register" className="text-gold hover:text-gold/80 font-semibold">
-            Create account
+          Already have an account?{' '}
+          <Link href="/login" className="text-gold hover:text-gold/80 font-semibold">
+            Sign in
           </Link>
+        </p>
+
+        <p className="text-center text-white/40 text-xs mt-4">
+          By signing up, you agree to our Terms of Service and Privacy Policy
         </p>
       </motion.div>
     </div>

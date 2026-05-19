@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { MapPin, Calendar, Package, Truck, CheckCircle } from 'lucide-react'
+import { MapPin, Calendar, Package, Truck, CheckCircle, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { StatusConfig } from '@/types'
 
 interface ShipmentDetails {
+  id: string
   tracking_id: string
   sender_name: string
   receiver_name: string
@@ -21,16 +22,28 @@ interface ShipmentDetails {
 }
 
 interface TrackingUpdate {
+  id: string
   status: string
   location: string
   description: string
   updated_at: string
 }
 
-export default function TrackingPage({ params }: { params: { id: string } }) {
+const statusConfig: Record<string, { label: string; color: string }> = {
+  pending: { label: 'Pending', color: 'bg-gray-500' },
+  picked_up: { label: 'Picked Up', color: 'bg-blue-500' },
+  in_transit: { label: 'In Transit', color: 'bg-gold' },
+  warehouse: { label: 'At Warehouse', color: 'bg-purple-500' },
+  customs: { label: 'Customs Clearance', color: 'bg-orange-500' },
+  out_for_delivery: { label: 'Out For Delivery', color: 'bg-green-500' },
+  delivered: { label: 'Delivered', color: 'bg-green-600' }
+}
+
+export default function TrackingResult({ params }: { params: { id: string } }) {
   const [shipment, setShipment] = useState<ShipmentDetails | null>(null)
   const [updates, setUpdates] = useState<TrackingUpdate[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const supabase = createClient()
 
   useEffect(() => {
@@ -38,58 +51,68 @@ export default function TrackingPage({ params }: { params: { id: string } }) {
   }, [params.id])
 
   const fetchTrackingData = async () => {
-    // Fetch shipment details
-    const { data: shipmentData, error: shipmentError } = await supabase
-      .from('shipments')
-      .select('*')
-      .eq('tracking_id', params.id)
-      .single()
+    try {
+      const { data: shipmentData, error: shipmentError } = await supabase
+        .from('shipments')
+        .select('*')
+        .eq('tracking_id', params.id)
+        .single()
 
-    if (shipmentError) {
-      console.error('Shipment not found')
+      if (shipmentError || !shipmentData) {
+        setError('Shipment not found')
+        setLoading(false)
+        return
+      }
+
+      setShipment(shipmentData)
+
+      const { data: updatesData } = await supabase
+        .from('tracking_updates')
+        .select('*')
+        .eq('shipment_id', shipmentData.id)
+        .order('updated_at', { ascending: false })
+
+      setUpdates(updatesData || [])
+    } catch (err) {
+      setError('Error loading tracking data')
+    } finally {
       setLoading(false)
-      return
     }
-
-    setShipment(shipmentData)
-
-    // Fetch tracking updates
-    const { data: updatesData } = await supabase
-      .from('tracking_updates')
-      .select('*')
-      .eq('shipment_id', shipmentData.id)
-      .order('updated_at', { ascending: false })
-
-    setUpdates(updatesData || [])
-    setLoading(false)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-navy to-navy/90">
+      <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold"></div>
       </div>
     )
   }
 
-  if (!shipment) {
+  if (error || !shipment) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-navy to-navy/90">
-        <div className="text-center">
+      <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 flex items-center justify-center p-4">
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center max-w-md">
           <Package className="w-16 h-16 text-white/30 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white">Shipment Not Found</h2>
           <p className="text-white/70 mt-2">Please check your tracking ID and try again</p>
+          <Link href="/track" className="inline-block mt-6 bg-gold text-navy px-6 py-2 rounded-lg font-semibold hover:bg-gold/90">
+            Try Again
+          </Link>
         </div>
       </div>
     )
   }
 
-  const statusInfo = StatusConfig[shipment.current_status as keyof typeof StatusConfig]
+  const statusInfo = statusConfig[shipment.current_status] || statusConfig.pending
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 py-12 px-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
+        <Link href="/track" className="inline-flex items-center gap-2 text-white/70 hover:text-gold mb-6 transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+          Back to Tracking
+        </Link>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -102,16 +125,13 @@ export default function TrackingPage({ params }: { params: { id: string } }) {
             </div>
             <div className="text-right">
               <p className="text-white/70 text-sm">Current Status</p>
-              <span className={`inline-block px-4 py-2 rounded-full text-sm font-semibold ${
-                shipment.current_status === 'delivered' ? 'bg-green-500/20 text-green-400' : 'bg-gold/20 text-gold'
-              }`}>
-                {statusInfo?.label}
+              <span className={`inline-block px-4 py-2 rounded-full text-sm font-semibold ${statusInfo.color} text-white`}>
+                {statusInfo.label}
               </span>
             </div>
           </div>
         </motion.div>
 
-        {/* Progress Bar */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -131,7 +151,7 @@ export default function TrackingPage({ params }: { params: { id: string } }) {
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${shipment.progress_percentage}%` }}
-                transition={{ duration: 1, delay: 0.3 }}
+                transition={{ duration: 1 }}
                 className="bg-gold rounded-full h-3 relative"
               >
                 <div className="absolute right-0 -top-6 transform translate-x-1/2">
@@ -144,12 +164,10 @@ export default function TrackingPage({ params }: { params: { id: string } }) {
           </div>
         </motion.div>
 
-        {/* Shipment Details */}
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
             className="bg-white/10 backdrop-blur-lg rounded-2xl p-6"
           >
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -185,7 +203,6 @@ export default function TrackingPage({ params }: { params: { id: string } }) {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
             className="bg-white/10 backdrop-blur-lg rounded-2xl p-6"
           >
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -213,7 +230,6 @@ export default function TrackingPage({ params }: { params: { id: string } }) {
           </motion.div>
         </div>
 
-        {/* Timeline */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

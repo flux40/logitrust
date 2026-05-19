@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Windows system files
+DumpStack.log.tmp
+hiberfil.sys
+pagefile.sys
+swapfile.sys
+System Volume Information/

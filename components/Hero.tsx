@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Package, MapPin, Scale, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function Hero() {
   const [formData, setFormData] = useState({
@@ -10,10 +11,20 @@ export default function Hero() {
     delivery: "",
     weight: "",
   });
+  const [trackingId, setTrackingId] = useState("");
+  const router = useRouter();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Booking:", formData);
+    // Add your booking logic here
+  };
+
+  const handleTrack = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (trackingId.trim()) {
+      router.push(`/track/${trackingId}`);
+    }
   };
 
   return (
@@ -57,7 +68,8 @@ export default function Hero() {
             </motion.p>
 
             {/* Quick Tracking Input */}
-            <motion.div
+            <motion.form
+              onSubmit={handleTrack}
               className="mt-8 flex gap-3 max-w-md"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -66,12 +78,17 @@ export default function Hero() {
               <input
                 type="text"
                 placeholder="Enter tracking number"
+                value={trackingId}
+                onChange={(e) => setTrackingId(e.target.value)}
                 className="flex-1 px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
               />
-              <button className="bg-gold text-navy px-6 py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-105">
+              <button
+                type="submit"
+                className="bg-gold text-navy px-6 py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-105"
+              >
                 Track
               </button>
-            </motion.div>
+            </motion.form>
           </motion.div>
 
           {/* Booking Form */}
