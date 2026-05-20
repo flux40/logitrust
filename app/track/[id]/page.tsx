@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { MapPin, Calendar, Package, Truck, CheckCircle, ArrowLeft } from 'lucide-react'
+import { MapPin, Calendar, Package, Truck, CheckCircle, ArrowLeft, Lock } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 
 interface ShipmentDetails {
@@ -11,14 +13,17 @@ interface ShipmentDetails {
   tracking_id: string
   sender_name: string
   receiver_name: string
+  receiver_email: string
   pickup_location: string
   delivery_location: string
   shipment_type: string
   package_weight: number
+  package_description: string
   current_status: string
   current_location: string
   estimated_delivery: string
   progress_percentage: number
+  created_at: string
 }
 
 interface TrackingUpdate {
@@ -44,14 +49,28 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
   const [updates, setUpdates] = useState<TrackingUpdate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    fetchTrackingData()
+    checkAccess()
   }, [params.id])
 
-  const fetchTrackingData = async () => {
+  const checkAccess = async () => {
     try {
+      // Check if user is logged in
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.log('No user found, redirecting to login')
+        router.push(`/login?redirect=/track/${params.id}`)
+        return
+      }
+
+      console.log('Logged in user email:', user.email)
+
+      // Fetch shipment
       const { data: shipmentData, error: shipmentError } = await supabase
         .from('shipments')
         .select('*')
@@ -59,13 +78,27 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
         .single()
 
       if (shipmentError || !shipmentData) {
+        console.error('Shipment not found:', shipmentError)
         setError('Shipment not found')
+        setCheckingAuth(false)
         setLoading(false)
         return
       }
 
-      setShipment(shipmentData)
+      console.log('Shipment receiver email:', shipmentData.receiver_email)
+      console.log('Current user email:', user.email)
 
+      // Check permission - compare emails
+      if (shipmentData.receiver_email !== user.email) {
+        console.log('Permission denied - emails do not match')
+        toast.error('You do not have permission to view this shipment')
+        router.push('/dashboard/customer')
+        return
+      }
+
+      setShipment(shipmentData)
+      
+      // Fetch tracking updates
       const { data: updatesData } = await supabase
         .from('tracking_updates')
         .select('*')
@@ -73,14 +106,17 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
         .order('updated_at', { ascending: false })
 
       setUpdates(updatesData || [])
+      setError('')
     } catch (err) {
-      setError('Error loading tracking data')
+      console.error('Error in checkAccess:', err)
+      setError('An error occurred')
     } finally {
+      setCheckingAuth(false)
       setLoading(false)
     }
   }
 
-  if (loading) {
+  if (checkingAuth || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold"></div>
@@ -108,11 +144,15 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 py-12 px-4">
       <div className="max-w-4xl mx-auto">
-        <Link href="/track" className="inline-flex items-center gap-2 text-white/70 hover:text-gold mb-6 transition-colors">
+        <Link 
+          href="/dashboard/customer" 
+          className="inline-flex items-center gap-2 text-white/70 hover:text-gold mb-6 transition-colors"
+        >
           <ArrowLeft className="w-4 h-4" />
-          Back to Tracking
+          Back to Dashboard
         </Link>
 
+        {/* Header Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -132,6 +172,7 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
           </div>
         </motion.div>
 
+        {/* Progress Bar */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -164,7 +205,9 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
           </div>
         </motion.div>
 
+        {/* Shipment and Package Info */}
         <div className="grid md:grid-cols-2 gap-6 mb-6">
+          {/* Shipment Details */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -200,6 +243,7 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
             </div>
           </motion.div>
 
+          {/* Package Info with Description */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -226,10 +270,20 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
                 <p className="text-white/70 text-sm">Weight</p>
                 <p className="text-white font-medium">{shipment.package_weight} kg</p>
               </div>
+              {/* Package Description */}
+              {shipment.package_description && (
+                <div className="pt-3 mt-2 border-t border-white/10">
+                  <p className="text-white/70 text-sm">Package Description</p>
+                  <p className="text-white text-sm mt-1 font-medium">
+                    {shipment.package_description}
+                  </p>
+                </div>
+              )}
             </div>
           </motion.div>
         </div>
 
+        {/* Tracking Timeline */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -238,38 +292,52 @@ export default function TrackingResult({ params }: { params: { id: string } }) {
         >
           <h3 className="text-lg font-bold text-white mb-6">Tracking Timeline</h3>
           <div className="relative">
-            {updates.map((update, index) => (
-              <div key={index} className="mb-6 relative">
-                {index !== updates.length - 1 && (
-                  <div className="absolute left-5 top-10 bottom-0 w-px bg-white/20"></div>
-                )}
-                <div className="flex gap-4">
-                  <div className="relative z-10">
-                    <div className="w-10 h-10 bg-gold/20 rounded-full flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 text-gold" />
-                    </div>
-                  </div>
-                  <div className="flex-1 pb-6">
-                    <div className="bg-white/5 rounded-lg p-4">
-                      <div className="flex justify-between items-start flex-wrap gap-2 mb-2">
-                        <h4 className="font-semibold text-white">
-                          {update.status.charAt(0).toUpperCase() + update.status.slice(1)}
-                        </h4>
-                        <span className="text-xs text-white/50">
-                          {new Date(update.updated_at).toLocaleString()}
-                        </span>
+            {updates.length === 0 ? (
+              <div className="text-center text-white/50 py-8">
+                <p>No tracking updates yet</p>
+              </div>
+            ) : (
+              updates.map((update, index) => (
+                <div key={update.id} className="mb-6 relative">
+                  {index !== updates.length - 1 && (
+                    <div className="absolute left-5 top-10 bottom-0 w-px bg-white/20"></div>
+                  )}
+                  <div className="flex gap-4">
+                    <div className="relative z-10">
+                      <div className="w-10 h-10 bg-gold/20 rounded-full flex items-center justify-center">
+                        <CheckCircle className="w-5 h-5 text-gold" />
                       </div>
-                      <p className="text-white/70 text-sm">{update.location}</p>
-                      {update.description && (
-                        <p className="text-white/50 text-sm mt-1">{update.description}</p>
-                      )}
+                    </div>
+                    <div className="flex-1 pb-6">
+                      <div className="bg-white/5 rounded-lg p-4">
+                        <div className="flex justify-between items-start flex-wrap gap-2 mb-2">
+                          <h4 className="font-semibold text-white">
+                            {update.status.charAt(0).toUpperCase() + update.status.slice(1).replace(/_/g, ' ')}
+                          </h4>
+                          <span className="text-xs text-white/50">
+                            {new Date(update.updated_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-white/70 text-sm">{update.location}</p>
+                        {update.description && (
+                          <p className="text-white/50 text-sm mt-1">{update.description}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </motion.div>
+
+        {/* Security Note */}
+        <div className="mt-6 text-center">
+          <p className="text-white/40 text-xs flex items-center justify-center gap-1">
+            <Lock className="w-3 h-3" />
+            This information is private and only visible to you
+          </p>
+        </div>
       </div>
     </div>
   )

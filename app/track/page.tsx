@@ -10,6 +10,7 @@ export default function TrackPage() {
   const [trackingId, setTrackingId] = useState('')
   const [loading, setLoading] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  const [userRole, setUserRole] = useState<string>('')
   const router = useRouter()
   const supabase = createClient()
 
@@ -25,6 +26,14 @@ export default function TrackPage() {
       return
     }
     
+    // Get user role
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('email', user.email)
+      .single()
+    
+    setUserRole(userData?.role || 'customer')
     setCheckingAuth(false)
   }
 
@@ -33,6 +42,10 @@ export default function TrackPage() {
     if (trackingId.trim()) {
       router.push(`/track/${trackingId}`)
     }
+  }
+
+  const getDashboardLink = () => {
+    return userRole === 'admin' ? '/dashboard/admin' : '/dashboard/customer'
   }
 
   if (checkingAuth) {
@@ -46,9 +59,12 @@ export default function TrackPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy to-navy/90 py-20 px-4">
       <div className="max-w-2xl mx-auto">
-        <Link href="/" className="inline-flex items-center gap-2 text-white/70 hover:text-gold mb-6">
+        <Link 
+          href={getDashboardLink()} 
+          className="inline-flex items-center gap-2 text-white/70 hover:text-gold mb-6 transition-colors"
+        >
           <ArrowLeft className="w-4 h-4" />
-          Back to Home
+          Back to Dashboard
         </Link>
         
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8">
@@ -66,24 +82,18 @@ export default function TrackPage() {
               placeholder="Enter tracking ID (e.g., LGT123456789)"
               value={trackingId}
               onChange={(e) => setTrackingId(e.target.value)}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold transition-colors"
               required
             />
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all flex items-center justify-center gap-2"
+              className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all hover:scale-[1.02] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <Search className="w-5 h-5" />
               Track Shipment
             </button>
           </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-white/50 text-sm">
-              Test with: <code className="text-gold">LGT123456789</code>
-            </p>
-          </div>
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Package, Truck, CheckCircle, Clock, MapPin, 
   Calendar, Search, LogOut, ArrowRight, Menu, X,
-  User, Bell, Filter, Home, History, Settings
+  User, Filter, Home, History, Settings
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -31,7 +31,8 @@ export default function CustomerDashboard() {
   const [shipments, setShipments] = useState<Shipment[]>([])
   const [filteredShipments, setFilteredShipments] = useState<Shipment[]>([])
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
+  const [userEmail, setUserEmail] = useState<string>('')
+  const [userName, setUserName] = useState<string>('')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showMobileMenu, setShowMobileMenu] = useState(false)
@@ -44,37 +45,46 @@ export default function CustomerDashboard() {
   }, [])
 
   const checkUserAndLoadShipments = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
-    }
+    try {
+      // Get logged in user from Auth
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        console.error('Auth error:', userError)
+        router.push('/login')
+        return
+      }
 
-    setUser(user)
-    await loadUserShipments(user.id)
-    setLoading(false)
-  }
+      if (!user.email) {
+        console.error('No email found for user')
+        router.push('/login')
+        return
+      }
 
-  const loadUserShipments = async (userId: string) => {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('email')
-      .eq('id', userId)
-      .single()
+      console.log('Logged in user email:', user.email)
+      setUserEmail(user.email)
+      setUserName(user.user_metadata?.full_name || user.email.split('@')[0])
 
-    const { data, error } = await supabase
-      .from('shipments')
-      .select('*')
-      .eq('receiver_email', userData?.email)
-      .order('created_at', { ascending: false })
+      // Load shipments where receiver_email matches
+      const { data, error } = await supabase
+        .from('shipments')
+        .select('*')
+        .eq('receiver_email', user.email)
+        .order('created_at', { ascending: false })
 
-    if (error) {
-      console.error('Error loading shipments:', error)
-      toast.error('Failed to load shipments')
-    } else {
-      setShipments(data || [])
-      filterShipments(data || [], searchTerm, statusFilter)
+      if (error) {
+        console.error('Error loading shipments:', error)
+        toast.error('Failed to load shipments')
+      } else {
+        console.log('Shipments found:', data?.length || 0)
+        setShipments(data || [])
+        filterShipments(data || [], searchTerm, statusFilter)
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Something went wrong')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -211,7 +221,7 @@ export default function CustomerDashboard() {
       <div className="bg-gradient-to-r from-navy to-navy/90 text-white px-4 py-6">
         <div className="max-w-7xl mx-auto">
           <h2 className="text-xl font-bold">
-            Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0]}!
+            Welcome back, {userName}!
           </h2>
           <p className="text-white/70 text-sm mt-1">
             Track and manage your shipments in real-time
