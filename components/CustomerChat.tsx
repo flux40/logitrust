@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   MessageCircle, 
@@ -42,13 +43,15 @@ export default function CustomerSupport() {
   const [inputMessage, setInputMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [conversation, setConversation] = useState<Conversation | null>(null)
-  const [customerInfo, setCustomerInfo] = useState({ name: '', email: '' })
-  const [showInfoModal, setShowInfoModal] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [customerName, setCustomerName] = useState('')
+  const [customerEmail, setCustomerEmail] = useState('')
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
   const supabase = createClient()
 
   // Check if user is logged in
@@ -58,19 +61,30 @@ export default function CustomerSupport() {
 
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
+    if (user && user.email) {
       setUser(user)
-      // Get user profile
-      const { data: userData } = await supabase
-        .from('users')
-        .select('full_name')
-        .eq('email', user.email)
-        .single()
+      setIsLoggedIn(true)
+      setCustomerEmail(user.email)
+      setCustomerName(user.user_metadata?.full_name || user.email.split('@')[0])
       
-      setCustomerInfo({
-        name: userData?.full_name || user.email?.split('@')[0] || 'Customer',
-        email: user.email || ''
-      })
+      // Check for existing conversation
+      await checkExistingConversation(user.email)
+    } else {
+      setIsLoggedIn(false)
+    }
+  }
+
+  const checkExistingConversation = async (email: string) => {
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('customer_email', email)
+      .eq('status', 'active')
+      .maybeSingle()
+
+    if (existing) {
+      setConversation(existing)
+      await loadMessages(existing.id)
     }
   }
 
@@ -89,7 +103,7 @@ export default function CustomerSupport() {
   // Load existing conversation and subscribe to new messages
   useEffect(() => {
     if (conversation?.id) {
-      loadMessages()
+      loadMessages(conversation.id)
       
       // Subscribe to new messages
       const subscription = supabase
@@ -118,13 +132,11 @@ export default function CustomerSupport() {
     }
   }, [conversation?.id])
 
-  const loadMessages = async () => {
-    if (!conversation?.id) return
-    
+  const loadMessages = async (conversationId: string) => {
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .eq('conversation_id', conversation.id)
+      .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
     
     if (error) {
@@ -146,7 +158,7 @@ export default function CustomerSupport() {
   }
 
   const startConversation = async () => {
-    if (!customerInfo.name || !customerInfo.email) {
+    if (!customerName || !customerEmail) {
       toast.error('Please enter your name and email')
       return
     }
@@ -157,15 +169,14 @@ export default function CustomerSupport() {
     const { data: existing } = await supabase
       .from('conversations')
       .select('*')
-      .eq('customer_email', customerInfo.email)
+      .eq('customer_email', customerEmail)
       .eq('status', 'active')
       .maybeSingle()
 
     if (existing) {
       setConversation(existing)
-      await loadMessages()
+      await loadMessages(existing.id)
       setIsLoading(false)
-      setShowInfoModal(false)
       toast.success('Connected to support!')
       return
     }
@@ -174,8 +185,8 @@ export default function CustomerSupport() {
     const { data: newConversation, error } = await supabase
       .from('conversations')
       .insert({
-        customer_name: customerInfo.name,
-        customer_email: customerInfo.email,
+        customer_name: customerName,
+        customer_email: customerEmail,
         status: 'active'
       })
       .select()
@@ -197,11 +208,10 @@ export default function CustomerSupport() {
         conversation_id: newConversation.id,
         sender_name: 'System',
         sender_role: 'admin',
-        message: `👋 Welcome ${customerInfo.name}! An agent will be with you shortly. Please describe your issue or question.`
+        message: `👋 Welcome ${customerName}! An agent will be with you shortly. Please describe your issue or question.`
       })
 
     setIsLoading(false)
-    setShowInfoModal(false)
     toast.success('Connected to support! An agent will respond shortly.')
   }
 
@@ -214,7 +224,7 @@ export default function CustomerSupport() {
       .from('messages')
       .insert({
         conversation_id: conversation.id,
-        sender_name: customerInfo.name || 'Customer',
+        sender_name: customerName || 'Customer',
         sender_role: 'customer',
         message: inputMessage.trim()
       })
@@ -229,7 +239,7 @@ export default function CustomerSupport() {
         id: Date.now().toString(),
         message: inputMessage.trim(),
         sender_role: 'customer',
-        sender_name: customerInfo.name || 'Customer',
+        sender_name: customerName || 'Customer',
         created_at: new Date().toISOString(),
         is_read: false
       }
@@ -245,18 +255,27 @@ export default function CustomerSupport() {
   }
 
   const handleOpenChat = () => {
-    if (!conversation && !user) {
-      setShowInfoModal(true)
-    } else if (!conversation && user) {
+    if (!isLoggedIn) {
+      toast.error('Please login to contact support')
+      router.push('/login')
+      return
+    }
+    
+    if (!conversation) {
       startConversation()
     }
     setIsOpen(true)
     setIsMinimized(false)
   }
 
+  // Don't show anything if not logged in
+  if (!isLoggedIn) {
+    return null
+  }
+
   return (
     <>
-      {/* Chat Button */}
+      {/* Chat Button - Only shows when logged in */}
       <motion.button
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
@@ -272,81 +291,6 @@ export default function CustomerSupport() {
           </span>
         ) : null}
       </motion.button>
-
-      {/* Info Modal */}
-      <AnimatePresence>
-        {showInfoModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => setShowInfoModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-center mb-6">
-                <div className="bg-gold/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Headphones className="w-8 h-8 text-gold" />
-                </div>
-                <h3 className="text-2xl font-bold text-navy">Customer Support</h3>
-                <p className="text-gray-600 mt-2">Please provide your details to start chatting</p>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-navy font-medium mb-2">Your Name</label>
-                  <input
-                    type="text"
-                    value={customerInfo.name}
-                    onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-gold focus:outline-none"
-                    placeholder="John Doe"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-navy font-medium mb-2">Email Address</label>
-                  <input
-                    type="email"
-                    value={customerInfo.email}
-                    onChange={(e) => setCustomerInfo({ ...customerInfo, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-gold focus:outline-none"
-                    placeholder="john@example.com"
-                  />
-                </div>
-                
-                <button
-                  onClick={startConversation}
-                  disabled={isLoading}
-                  className="w-full bg-gold text-navy py-3 rounded-lg font-semibold hover:bg-gold/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageCircle className="w-5 h-5" />}
-                  Start Chat
-                </button>
-                
-                <button
-                  onClick={() => setShowInfoModal(false)}
-                  className="w-full text-gray-500 py-2 text-sm hover:text-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-              
-              <div className="mt-6 pt-6 border-t border-gray-100">
-                <p className="text-xs text-gray-400 text-center">
-                  Our support team is available 24/7 to assist you
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Chat Window */}
       <AnimatePresence>
