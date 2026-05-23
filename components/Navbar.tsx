@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Menu, X, Package } from "lucide-react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 const navLinks = [
   { name: "Homepage", href: "/" },
@@ -11,12 +12,13 @@ const navLinks = [
   { name: "About Us", href: "/#about-us" },
   { name: "FAQ", href: "/#faq" },
   { name: "Contact Us", href: "/#contact-us" },
-  { name: "Admin Chat", href: "/admin/chat" },
 ];
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const supabase = createClient();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -25,6 +27,22 @@ export default function Navbar() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    checkAdminStatus();
+  }, []);
+
+  const checkAdminStatus = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from('users')
+        .select('role')
+        .eq('email', user.email)
+        .single();
+      setIsAdmin(data?.role === 'admin');
+    }
+  };
 
   return (
     <motion.nav
@@ -56,6 +74,15 @@ export default function Navbar() {
                 {link.name}
               </Link>
             ))}
+            {/* Only show Admin Chat for admin users */}
+            {isAdmin && (
+              <Link
+                href="/admin/chat"
+                className="text-white/80 hover:text-gold transition-colors duration-200 text-sm font-medium"
+              >
+                Admin Chat
+              </Link>
+            )}
           </div>
 
           {/* Desktop Buttons */}
@@ -110,6 +137,16 @@ export default function Navbar() {
                 {link.name}
               </Link>
             ))}
+            {/* Only show Admin Chat for admin users on mobile */}
+            {isAdmin && (
+              <Link
+                href="/admin/chat"
+                className="block text-white/80 hover:text-gold transition-colors py-2"
+                onClick={() => setIsOpen(false)}
+              >
+                Admin Chat
+              </Link>
+            )}
             <div className="pt-4 space-y-3 border-t border-white/10">
               <Link
                 href="/login"

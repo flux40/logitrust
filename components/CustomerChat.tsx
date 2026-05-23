@@ -256,9 +256,7 @@ export default function CustomerSupport() {
 
   const handleOpenChat = () => {
     if (!isLoggedIn) {
-      toast.error('Please login to contact support')
-      router.push('/login')
-      return
+      return null
     }
     
     if (!conversation) {

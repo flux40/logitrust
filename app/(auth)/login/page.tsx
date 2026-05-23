@@ -15,7 +15,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/dashboard/customer'
+  const redirectTo = searchParams.get('redirect') || ''
   const supabase = createClient()
 
   useEffect(() => {
@@ -24,18 +24,20 @@ function LoginForm() {
 
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      // Get user role and redirect
+    if (user && user.email) {
       const { data: userData } = await supabase
         .from('users')
         .select('role')
         .eq('email', user.email)
         .single()
       
-      if (userData?.role === 'admin') {
-        router.push('/dashboard/admin')
+      // If there's a specific redirect URL, use it
+      if (redirectTo && redirectTo !== '') {
+        window.location.href = redirectTo
+      } else if (userData?.role === 'admin') {
+        window.location.href = '/dashboard/admin'
       } else {
-        router.push('/dashboard/customer')
+        window.location.href = '/dashboard/customer'
       }
     }
   }
@@ -51,7 +53,6 @@ function LoginForm() {
     setLoading(true)
 
     try {
-      // Sign in with Supabase
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -69,18 +70,13 @@ function LoginForm() {
         return
       }
 
-      // IMPORTANT: Get user role from database
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('role, full_name')
+        .select('role')
         .eq('email', email)
         .single()
 
-      console.log('User data from DB:', userData) // Debug log
-
       if (userError) {
-        console.error('Error fetching user role:', userError)
-        // If no record, create one as customer
         await supabase
           .from('users')
           .insert({
@@ -90,20 +86,26 @@ function LoginForm() {
             role: 'customer'
           })
         toast.success('Login successful!')
-        router.push('/dashboard/customer')
+        // Check if there's a redirect URL
+        if (redirectTo && redirectTo !== '') {
+          window.location.href = redirectTo
+        } else {
+          window.location.href = '/dashboard/customer'
+        }
         setLoading(false)
         return
       }
 
-      toast.success(`Welcome ${userData.full_name || email.split('@')[0]}!`)
+      toast.success(`Welcome back!`)
 
-      // Redirect based on role
-      if (userData?.role === 'admin') {
-        console.log('Redirecting to admin dashboard')
-        router.push('/dashboard/admin')
+      // IMPORTANT: Use the redirectTo if present
+      if (redirectTo && redirectTo !== '') {
+        console.log('Redirecting to:', redirectTo)
+        window.location.href = redirectTo
+      } else if (userData?.role === 'admin') {
+        window.location.href = '/dashboard/admin'
       } else {
-        console.log('Redirecting to customer dashboard')
-        router.push('/dashboard/customer')
+        window.location.href = '/dashboard/customer'
       }
       
     } catch (error) {
@@ -126,7 +128,9 @@ function LoginForm() {
             <Package className="w-12 h-12 text-gold" />
           </div>
           <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
-          <p className="text-white/70 text-sm mt-1">Sign in to your account</p>
+          <p className="text-white/70 text-sm mt-1">
+            {redirectTo === '/admin/chat' ? 'Please login to access admin chat' : 'Sign in to your account'}
+          </p>
         </div>
         
         <form onSubmit={handleLogin} className="space-y-4">
@@ -140,7 +144,7 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-gold text-sm"
-                placeholder="admin@logitrust.com"
+                placeholder="support@logitrust.com"
                 disabled={loading}
               />
             </div>
