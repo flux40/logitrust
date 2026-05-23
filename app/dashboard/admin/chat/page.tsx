@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Send, 
@@ -12,21 +13,18 @@ import {
   Search,
   MessageCircle,
   Check,
-  XCircle,
   User,
   Mail,
-  Phone,
-  MapPin,
-  Package
+  ArrowLeft
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
 
 interface Conversation {
   id: string
   customer_name: string
   customer_email: string
-  customer_phone?: string
   status: string
   unread_count: number
   created_at: string
@@ -46,8 +44,6 @@ interface Message {
 interface CustomerInfo {
   full_name: string
   email: string
-  phone?: string
-  address?: string
 }
 
 export default function AdminChatPage() {
@@ -59,41 +55,91 @@ export default function AdminChatPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [isSending, setIsSending] = useState(false)
-  const [isTyping, setIsTyping] = useState(false)
   const [adminName, setAdminName] = useState('Support Agent')
+  const [isAdmin, setIsAdmin] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
   const supabase = createClient()
 
-  // Load conversations and setup realtime
+  // Check admin access
   useEffect(() => {
-    loadConversations()
-    getAdminInfo()
+    checkAdminAccess()
+  }, [])
+
+  const checkAdminAccess = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
     
-    // Subscribe to new conversations and messages
+    if (!user) {
+      router.push('/login?redirect=/dashboard/admin/chat')
+      return
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('email', user.email)
+      .single()
+
+    if (userData?.role !== 'admin') {
+      router.push('/dashboard/customer')
+      return
+    }
+
+    setIsAdmin(true)
+    setAdminName(user.user_metadata?.full_name || user.email?.split('@')[0] || 'Support Agent')
+    await loadConversations()
+    setIsLoading(false)
+  }
+
+  // Load conversations and setup realtime
+  const loadConversations = async () => {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .order('updated_at', { ascending: false })
+
+    if (error) {
+      toast.error('Failed to load conversations')
+    } else {
+      setConversations(data || [])
+    }
+  }
+
+  // Setup realtime subscription for new conversations and messages
+  useEffect(() => {
+    if (!isAdmin) return
+
+    // Subscribe to new conversations
     const conversationsSubscription = supabase
       .channel('admin-conversations')
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'conversations' }, 
-        () => loadConversations()
+        () => {
+          loadConversations()
+        }
       )
       .subscribe()
 
+    // Subscribe to new messages
     const messagesSubscription = supabase
       .channel('admin-messages')
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'messages' }, 
         (payload) => {
           const newMessage = payload.new as Message
+          
+          // If this message is for the selected conversation, add it to messages
           if (selectedConversation?.id === newMessage.conversation_id) {
             setMessages(prev => [...prev, newMessage])
             markMessageAsRead(newMessage.id)
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
           } else {
-            // Update unread count
+            // Otherwise, just reload conversations to update unread count
             loadConversations()
-            // Show notification
-            toast.info(`New message from ${newMessage.sender_name}`, {
+            // Show notification for new message
+            toast.info(`New message from customer`, {
               duration: 5000,
               action: {
                 label: 'View',
@@ -112,50 +158,49 @@ export default function AdminChatPage() {
       conversationsSubscription.unsubscribe()
       messagesSubscription.unsubscribe()
     }
-  }, [selectedConversation])
+  }, [isAdmin, selectedConversation?.id])
 
   // Load messages when conversation changes
   useEffect(() => {
     if (selectedConversation) {
       loadMessages(selectedConversation.id)
       loadCustomerInfo(selectedConversation.customer_email)
-      // Mark all messages as read
       markConversationAsRead(selectedConversation.id)
     }
   }, [selectedConversation])
+
+  // Setup realtime for selected conversation messages
+  useEffect(() => {
+    if (!selectedConversation?.id) return
+
+    const channel = supabase
+      .channel(`conversation-${selectedConversation.id}`)
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation.id}`
+        }, 
+        (payload) => {
+          const newMessage = payload.new as Message
+          console.log('New message received:', newMessage)
+          setMessages(prev => [...prev, newMessage])
+          markMessageAsRead(newMessage.id)
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [selectedConversation?.id])
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  const getAdminInfo = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data } = await supabase
-        .from('users')
-        .select('full_name')
-        .eq('email', user.email)
-        .single()
-      if (data?.full_name) {
-        setAdminName(data.full_name)
-      }
-    }
-  }
-
-  const loadConversations = async () => {
-    const { data, error } = await supabase
-      .from('conversations')
-      .select('*')
-      .order('updated_at', { ascending: false })
-
-    if (error) {
-      toast.error('Failed to load conversations')
-    } else {
-      setConversations(data || [])
-    }
-    setIsLoading(false)
-  }
 
   const loadMessages = async (conversationId: string) => {
     const { data, error } = await supabase
@@ -205,6 +250,9 @@ export default function AdminChatPage() {
       .from('conversations')
       .update({ unread_count: 0 })
       .eq('id', conversationId)
+    
+    // Reload conversations to update unread count in sidebar
+    loadConversations()
   }
 
   const sendMessage = async () => {
@@ -222,17 +270,18 @@ export default function AdminChatPage() {
       })
 
     if (error) {
-      toast.error('Failed to send message')
+      toast.error('Failed to send message: ' + error.message)
     } else {
       setInputMessage('')
       // Update conversation updated_at
       await supabase
         .from('conversations')
-        .update({ updated_at: new Date() })
+        .update({ updated_at: new Date().toISOString() })
         .eq('id', selectedConversation.id)
     }
     
     setIsSending(false)
+    inputRef.current?.focus()
   }
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -273,7 +322,7 @@ export default function AdminChatPage() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || !isAdmin) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold"></div>
@@ -286,11 +335,18 @@ export default function AdminChatPage() {
       <div className="h-screen flex flex-col">
         {/* Header */}
         <div className="bg-navy text-white p-4">
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <Headphones className="w-5 h-5 text-gold" />
-            Customer Support Dashboard
-          </h1>
-          <p className="text-white/70 text-sm mt-1">Manage customer conversations</p>
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard/admin" className="hover:bg-white/10 p-1 rounded-lg transition-colors">
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <Headphones className="w-5 h-5 text-gold" />
+                Customer Support Dashboard
+              </h1>
+              <p className="text-white/70 text-sm mt-1">Manage customer conversations in real-time</p>
+            </div>
+          </div>
         </div>
 
         {/* Main Content */}
@@ -398,49 +454,46 @@ export default function AdminChatPage() {
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-                {messages.map((message, index) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`mb-4 flex ${message.sender_role === 'admin' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-[70%] ${message.sender_role === 'admin' ? 'order-2' : 'order-1'}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs text-gray-500">
-                          {message.sender_role === 'admin' ? 'You (Support Agent)' : selectedConversation.customer_name}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <div
-                        className={`p-3 rounded-2xl ${
-                          message.sender_role === 'admin'
-                            ? 'bg-gold text-navy rounded-br-none'
-                            : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
-                        }`}
-                      >
-                        <p className="text-sm">{message.message}</p>
-                      </div>
-                      {message.sender_role === 'admin' && message.is_read && (
-                        <div className="flex justify-end mt-1">
-                          <CheckCircle className="w-3 h-3 text-green-500" />
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-                {isTyping && (
-                  <div className="flex justify-start mb-4">
-                    <div className="bg-white rounded-2xl rounded-bl-none p-3 shadow-sm">
-                      <div className="flex gap-1">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                      </div>
-                    </div>
+                {messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <Headphones className="w-12 h-12 text-gold/50 mb-4" />
+                    <p className="text-gray-500 text-sm">No messages yet</p>
+                    <p className="text-xs text-gray-400 mt-1">Send a reply to start the conversation</p>
                   </div>
+                ) : (
+                  messages.map((message) => (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`mb-4 flex ${message.sender_role === 'admin' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] ${message.sender_role === 'admin' ? 'order-2' : 'order-1'}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs text-gray-500">
+                            {message.sender_role === 'admin' ? 'You (Support Agent)' : selectedConversation.customer_name}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div
+                          className={`p-3 rounded-2xl text-sm ${
+                            message.sender_role === 'admin'
+                              ? 'bg-gold text-navy rounded-br-none'
+                              : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
+                          }`}
+                        >
+                          <p>{message.message}</p>
+                        </div>
+                        {message.sender_role === 'admin' && message.is_read && (
+                          <div className="flex justify-end mt-1">
+                            <CheckCircle className="w-3 h-3 text-green-500" />
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))
                 )}
                 <div ref={messagesEndRef} />
               </div>

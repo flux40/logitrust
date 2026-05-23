@@ -9,7 +9,6 @@ import {
   Send, 
   Headphones, 
   Clock, 
-  Mail,
   CheckCircle,
   Loader2,
   Users,
@@ -44,7 +43,6 @@ export default function CustomerSupport() {
   const [isLoading, setIsLoading] = useState(false)
   const [conversation, setConversation] = useState<Conversation | null>(null)
   const [isSending, setIsSending] = useState(false)
-  const [user, setUser] = useState<any>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
@@ -62,15 +60,12 @@ export default function CustomerSupport() {
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (user && user.email) {
-      setUser(user)
-      setIsLoggedIn(true)
       setCustomerEmail(user.email)
       setCustomerName(user.user_metadata?.full_name || user.email.split('@')[0])
+      setIsLoggedIn(true)
       
       // Check for existing conversation
       await checkExistingConversation(user.email)
-    } else {
-      setIsLoggedIn(false)
     }
   }
 
@@ -85,7 +80,35 @@ export default function CustomerSupport() {
     if (existing) {
       setConversation(existing)
       await loadMessages(existing.id)
+      setupRealtimeSubscription(existing.id)
     }
+  }
+
+  const setupRealtimeSubscription = (conversationId: string) => {
+    // Subscribe to new messages for this conversation
+    const subscription = supabase
+      .channel(`customer-chat-${conversationId}`)
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        }, 
+        (payload) => {
+          const newMessage = payload.new as Message
+          console.log('New message received:', newMessage)
+          
+          if (newMessage.sender_role === 'admin') {
+            setMessages(prev => [...prev, newMessage])
+            markMessagesAsRead()
+            toast.info('New message from support!', { duration: 3000 })
+          }
+        }
+      )
+      .subscribe()
+
+    return subscription
   }
 
   // Auto-scroll to bottom
@@ -100,34 +123,16 @@ export default function CustomerSupport() {
     }
   }, [isOpen, isMinimized, conversation])
 
-  // Load existing conversation and subscribe to new messages
+  // Setup subscription when conversation exists
+  let subscription: any = null
   useEffect(() => {
     if (conversation?.id) {
-      loadMessages(conversation.id)
+      subscription = setupRealtimeSubscription(conversation.id)
       
-      // Subscribe to new messages
-      const subscription = supabase
-        .channel(`conversation:${conversation.id}`)
-        .on('postgres_changes', 
-          { 
-            event: 'INSERT', 
-            schema: 'public', 
-            table: 'messages',
-            filter: `conversation_id=eq.${conversation.id}`
-          }, 
-          (payload) => {
-            const newMessage = payload.new as Message
-            if (newMessage.sender_role === 'admin') {
-              setMessages(prev => [...prev, newMessage])
-              markMessagesAsRead()
-              toast.info('New message from support!', { duration: 3000 })
-            }
-          }
-        )
-        .subscribe()
-
       return () => {
-        subscription.unsubscribe()
+        if (subscription) {
+          supabase.removeChannel(subscription)
+        }
       }
     }
   }, [conversation?.id])
@@ -176,6 +181,7 @@ export default function CustomerSupport() {
     if (existing) {
       setConversation(existing)
       await loadMessages(existing.id)
+      setupRealtimeSubscription(existing.id)
       setIsLoading(false)
       toast.success('Connected to support!')
       return
@@ -200,6 +206,7 @@ export default function CustomerSupport() {
     }
 
     setConversation(newConversation)
+    setupRealtimeSubscription(newConversation.id)
     
     // Send welcome message
     await supabase
@@ -234,7 +241,7 @@ export default function CustomerSupport() {
       toast.error('Failed to send message')
     } else {
       setInputMessage('')
-      // Add message to local state immediately
+      // Add message to local state immediately for instant feedback
       const tempMessage: Message = {
         id: Date.now().toString(),
         message: inputMessage.trim(),
@@ -256,7 +263,9 @@ export default function CustomerSupport() {
 
   const handleOpenChat = () => {
     if (!isLoggedIn) {
-      return null
+      toast.error('Please login to contact support')
+      router.push('/login')
+      return
     }
     
     if (!conversation) {
@@ -273,7 +282,7 @@ export default function CustomerSupport() {
 
   return (
     <>
-      {/* Chat Button - Only shows when logged in */}
+      {/* Chat Button */}
       <motion.button
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
@@ -338,7 +347,6 @@ export default function CustomerSupport() {
 
             {!isMinimized && (
               <>
-                {/* Quick Info Bar */}
                 <div className="bg-gray-50 p-2 flex justify-around text-xs border-b">
                   <div className="flex items-center gap-1">
                     <Clock className="w-3 h-3 text-gold" />
