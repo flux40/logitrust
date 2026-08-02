@@ -80,24 +80,29 @@ export default function CustomerSupport() {
     if (existing) {
       setConversation(existing)
       await loadMessages(existing.id)
-      setupRealtimeSubscription(existing.id)
     }
   }
 
-  const setupRealtimeSubscription = (conversationId: string) => {
-    // Subscribe to new messages for this conversation
-    const subscription = supabase
-      .channel(`customer-chat-${conversationId}`)
-      .on('postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
+  // Setup realtime subscription when conversation exists
+  useEffect(() => {
+    if (!conversation?.id) return
+
+    console.log('Setting up realtime for conversation:', conversation.id)
+
+    // Create the subscription
+    const channel = supabase
+      .channel(`customer-chat-${conversation.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
           table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`
-        }, 
+          filter: `conversation_id=eq.${conversation.id}`
+        },
         (payload) => {
           const newMessage = payload.new as Message
-          console.log('New message received:', newMessage)
+          console.log('📩 New message received:', newMessage)
           
           if (newMessage.sender_role === 'admin') {
             setMessages(prev => [...prev, newMessage])
@@ -106,10 +111,16 @@ export default function CustomerSupport() {
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status)
+      })
 
-    return subscription
-  }
+    // Cleanup: unsubscribe when component unmounts or conversation changes
+    return () => {
+      console.log('🧹 Cleaning up subscription')
+      supabase.removeChannel(channel)
+    }
+  }, [conversation?.id])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -122,20 +133,6 @@ export default function CustomerSupport() {
       setTimeout(() => inputRef.current?.focus(), 300)
     }
   }, [isOpen, isMinimized, conversation])
-
-  // Setup subscription when conversation exists
-  let subscription: any = null
-  useEffect(() => {
-    if (conversation?.id) {
-      subscription = setupRealtimeSubscription(conversation.id)
-      
-      return () => {
-        if (subscription) {
-          supabase.removeChannel(subscription)
-        }
-      }
-    }
-  }, [conversation?.id])
 
   const loadMessages = async (conversationId: string) => {
     const { data, error } = await supabase
@@ -181,7 +178,6 @@ export default function CustomerSupport() {
     if (existing) {
       setConversation(existing)
       await loadMessages(existing.id)
-      setupRealtimeSubscription(existing.id)
       setIsLoading(false)
       toast.success('Connected to support!')
       return
@@ -206,7 +202,6 @@ export default function CustomerSupport() {
     }
 
     setConversation(newConversation)
-    setupRealtimeSubscription(newConversation.id)
     
     // Send welcome message
     await supabase
